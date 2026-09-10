@@ -1,0 +1,17 @@
+node_modules/
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# Local-only: never commit a key, an .env, or a profile patch carrying one.
+.env
+.env.*
+!.env.example
+*.local
+cordis.patch.yml.bak*
+
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
