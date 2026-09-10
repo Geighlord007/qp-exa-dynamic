@@ -30,4 +30,12 @@ Initial release.
   `/exa [on]`, `/exa <off>`, `/exa "status"`, `/exa type [deep]` and `/exa results [3]` all read the
   way they were meant. Submitting the hint template untouched is reported as such rather than guessed
   at, because each of its options is a different action.
-- 35 unit tests, no API key required.
+- A second model-facing tool, `exa_search(query, maxResults?)`, whose ceiling is its own (1-50). The
+  seam caps every search at the caller's `request.maxResults` and `dsh-tool-web` sends its own
+  `searchMaxResults` on every call, so no provider can exceed that cap and raising it means forking an
+  agent preset. This tool owns its own request cap, which turns the result count into a per-call model
+  argument and makes the preset fork optional. It goes through `ctx.web` like `web_search`, so
+  provider, search type and Dynamic Highlights are shared; a prompt section beside `web_search`'s
+  says when to reach for it. `@deepseek-ai/dsh-tools` is a peer dependency, and must resolve to the
+  runtime's own instance — a nested copy breaks the agent loop.
+- 40 unit tests, no API key required.

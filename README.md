@@ -132,6 +132,36 @@ restart. Clearing that section returns the plugin to its configured defaults.
 Measured on one provider instance, one query: switching Dynamic Highlights off took the same search
 from 12,716 to 57,958 highlight characters — a 4.6x difference, applied on the next search.
 
+## The `exa_search` tool
+
+The plugin also registers a second, model-facing tool beside `web_search`:
+
+```
+exa_search(query: string, maxResults?: integer)   // maxResults 1-50
+```
+
+It exists because of a hard structural fact: `ctx.web.search()` caps its result at the **caller's**
+`request.maxResults`, and `dsh-tool-web` sends its own `searchMaxResults` on every call — so no
+provider can ever exceed that cap, and raising it means forking an agent preset. This tool owns its
+own `request.maxResults`, so the result count becomes a **per-call model argument** instead of a
+deployment-level ceiling.
+
+That makes the preset fork optional. Two ways past the default 8 sources:
+
+| Want | Use | Needs the preset fork? |
+| --- | --- | --- |
+| 20 sources for one question | `exa_search(query, maxResults: 20)` — just ask in words | no |
+| `/exa results 20` to work | the `/exa` command | yes |
+
+The tool goes through `ctx.web` like `web_search` does, so it uses the same selected provider, the
+same search type and the same Dynamic Highlights setting; only the count differs. Its ceiling of 50
+is its own — dynamic highlights measured ~1.6k characters per source, so 50 is already ~20k tokens
+of context.
+
+A prompt section next to `web_search`'s tells the model when to reach for it; ordinary lookups stay
+on `web_search`. If the composition has no `tools` registry the provider still mounts and only the
+tool is absent.
+
 ## Retrieval types
 
 Exa's `type` is the latency/quality dial. All eight were verified against the live API; measured
@@ -219,7 +249,7 @@ tokens.
 ## Development
 
 ```sh
-node test/index.test.js    # 35 unit tests, no API key needed
+node test/index.test.js    # 40 unit tests, no API key needed
 EXA_API_KEY=... node test/live.mjs   # hits the real API, spends credit
 ```
 

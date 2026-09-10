@@ -1,9 +1,9 @@
 {
   "name": "dsh-web-search-exa-dynamic",
   "version": "0.1.0",
-  "description": "Exa web search provider for the DeepSeek Harness ctx.web seam, with Dynamic Highlights on by default and a /exa command to change them at runtime.",
+  "private": true,
+  "description": "Exa web search provider for the dsh ctx.web seam, with Dynamic Highlights enabled by default.",
   "license": "MIT",
-  "author": "Geighlord007",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -14,32 +14,10 @@
   },
   "files": [
     "lib",
-    "cordis.patch.yml",
-    "README.md",
-    "README.zh.md",
-    "CHANGELOG.md",
-    "LICENSE"
+    "cordis.patch.yml"
   ],
-  "keywords": [
-    "deepseek-harness",
-    "dsh",
-    "dsh-plugin",
-    "cordis",
-    "exa",
-    "web-search",
-    "search-provider",
-    "dynamic-highlights"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Geighlord007/dsh-web-search-exa-dynamic.git"
-  },
-  "bugs": {
-    "url": "https://github.com/Geighlord007/dsh-web-search-exa-dynamic/issues"
-  },
-  "homepage": "https://github.com/Geighlord007/dsh-web-search-exa-dynamic#readme",
   "scripts": {
-    "test": "node test/index.test.js",
+    "test": "node --test test/index.test.js",
     "live": "node test/live.mjs"
   },
   "dsh": {
@@ -50,6 +28,7 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
     "@deepseek-ai/dsh-launch-environment": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-tools": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-web": "^0.1.5-rc.1"
   },
   "dependencies": {

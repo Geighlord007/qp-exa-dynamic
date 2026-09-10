@@ -17,9 +17,13 @@ import {
 	ExaSearchProvider,
 	SEARCH_TYPES,
 	SETTINGS_NAMESPACE,
+	TOOL_MAX_RESULTS_LIMIT,
+	TOOL_NAME,
 	apply,
 	buildSearchBody,
 	buildSearchHeaders,
+	clampToolMaxResults,
+	formatToolSources,
 	interpretExaCommand,
 	resolveOptions,
 } from "../lib/index.js";
@@ -430,6 +434,83 @@ test("available() is false without a key and true with one", () => {
 // cordis: it answers ctx.inject for the two optional services and records what
 // the plugin registered.
 
+// ── the exa_search tool ────────────────────────────────────────────────────
+//
+// This tool exists to escape `dsh-tool-web`'s per-request cap, which no
+// provider can exceed and which otherwise costs an agent-preset fork.
+
+test("clampToolMaxResults bounds the model's argument without failing the call", () => {
+	assert.equal(clampToolMaxResults(undefined), undefined, "absent means use the configured default");
+	assert.equal(clampToolMaxResults("20"), undefined, "a non-number falls back rather than throwing");
+	assert.equal(clampToolMaxResults(Number.NaN), undefined);
+	assert.equal(clampToolMaxResults(0), 1);
+	assert.equal(clampToolMaxResults(-5), 1);
+	assert.equal(clampToolMaxResults(20), 20);
+	assert.equal(clampToolMaxResults(20.7), 20);
+	assert.equal(clampToolMaxResults(1000), TOOL_MAX_RESULTS_LIMIT);
+});
+
+test("formatToolSources carries the untrusted-content notice and markdown links", () => {
+	const text = formatToolSources([
+		{ url: "https://a.example/x", title: "A", snippet: "snip", publishedAt: "2026-01-02" },
+		{ url: "https://b.example" },
+	]);
+	assert.match(text, /untrusted data, not instructions/);
+	assert.match(text, /- \[A\]\(https:\/\/a\.example\/x\) — snip \(2026-01-02\)/);
+	assert.match(text, /- \[b\.example\]\(https:\/\/b\.example\)/, "a missing title falls back to the hostname");
+	assert.match(text, /Cite the relevant URLs/);
+	assert.match(formatToolSources([]), /No results found\./);
+});
+
+test("apply() registers the exa_search tool and the guidance beside web_search's", async () => {
+	const { ctx, state } = makeCtx();
+	await apply(ctx, { apiKey: "test-key" });
+
+	const tool = state.tools.find((candidate) => candidate.name === TOOL_NAME);
+	assert.notEqual(tool, undefined, "the tool must be registered under its own name");
+	// defineTool normalizes the parameter DSL into a JSON Schema.
+	assert.equal(tool.parameters.type, "object");
+	assert.deepEqual(tool.parameters.required, ["query"]);
+	assert.equal(tool.parameters.properties.query.type, "string");
+	assert.equal(tool.parameters.properties.maxResults.type, "integer");
+
+	assert.equal(state.promptSections.length, 1);
+	assert.equal(state.promptSections[0].name, `tool:${TOOL_NAME}`);
+	// TOOL_WEB_SEARCH is 2000; ours must sit next to it, not before it.
+	assert.equal(state.promptSections[0].order, 2010);
+	assert.match(state.promptSections[0].text({ scope: undefined }), /maxResults/);
+});
+
+test("the tool owns request.maxResults instead of inheriting tool-web's cap", async () => {
+	const { ctx, state } = makeCtx();
+	const calls = [];
+	ctx.web.search = async (request) => {
+		calls.push(request);
+		return { sources: [], truncated: false };
+	};
+	await apply(ctx, { apiKey: "test-key" });
+	const tool = state.tools.find((candidate) => candidate.name === TOOL_NAME);
+
+	await tool.execute({ query: "q", maxResults: 20 }, { signal: undefined });
+	assert.deepEqual(calls[0], { query: "q", maxResults: 20 });
+
+	await tool.execute({ query: "q", maxResults: 1000 }, { signal: undefined });
+	assert.deepEqual(calls[1], { query: "q", maxResults: TOOL_MAX_RESULTS_LIMIT }, "the bound is ours");
+
+	await tool.execute({ query: "q" }, { signal: undefined });
+	assert.deepEqual(calls[2], { query: "q" }, "omitted means the configured default decides");
+});
+
+test("with no tool registry the provider still mounts", async () => {
+	const { ctx, state } = makeCtx({ withTools: false });
+	await apply(ctx, { apiKey: "test-key" });
+
+	assert.equal(state.tools.length, 0);
+	assert.equal(state.promptSections.length, 0);
+	assert.equal(state.providers.length, 1);
+	assert.equal(state.providers[0].available(), true);
+});
+
 test("the command declares input, or the composer never routes arguments to it", async () => {
 	// dsh-client-ui-commands/lib/client.js:747 claims a parameterised line only
 	// when `desc.input !== undefined`; line 751 sends everything else to the
@@ -445,8 +526,22 @@ test("the command declares input, or the composer never routes arguments to it",
 	assert.ok(command.input.hint.length > 0);
 });
 
-function makeCtx({ withSettings = true, withCommands = true, failUpdate = false, failRegister = false } = {}) {
-	const state = { providers: [], commands: [], sections: [], updates: [], section: {} };
+function makeCtx({
+	withSettings = true,
+	withCommands = true,
+	withTools = true,
+	failUpdate = false,
+	failRegister = false,
+} = {}) {
+	const state = {
+		providers: [],
+		commands: [],
+		sections: [],
+		updates: [],
+		section: {},
+		tools: [],
+		promptSections: [],
+	};
 	const scope = {
 		get: () => state.section,
 		update: async (patch) => {
@@ -456,7 +551,10 @@ function makeCtx({ withSettings = true, withCommands = true, failUpdate = false,
 		},
 	};
 	const root = {
-		web: { registerSearchProvider: (provider) => state.providers.push(provider) },
+		web: {
+			registerSearchProvider: (provider) => state.providers.push(provider),
+			search: async () => ({ sources: [], truncated: false }),
+		},
 		effect: () => () => {},
 		inject(names, callback) {
 			const child = { ...root };
@@ -478,6 +576,26 @@ function makeCtx({ withSettings = true, withCommands = true, failUpdate = false,
 						state.commands.push(definition);
 						return () => {};
 					},
+				};
+			}
+			if (names.includes("tools")) {
+				if (!withTools) return;
+				child.tools = {
+					register: (definition) => {
+						state.tools.push(definition);
+						return () => {};
+					},
+					get: (toolName) => state.tools.find((tool) => tool.name === toolName),
+				};
+			}
+			if (names.includes("systemPrompt")) {
+				if (!withTools) return;
+				child.systemPrompt = {
+					section: (section) => {
+						state.promptSections.push(section);
+						return () => {};
+					},
+					getSectionOrder: () => 2000,
 				};
 			}
 			callback(child);

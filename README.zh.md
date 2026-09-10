@@ -123,6 +123,33 @@ dsh plugin --profile web add dsh-web-search-exa-dynamic
 实测同一个 provider 实例、同一个查询：关掉动态高亮让同一次搜索从 12,716 字符变成 57,958 字符——
 差 4.6 倍，**下一次搜索即刻生效**。
 
+## `exa_search` 工具
+
+插件还在 `web_search` 旁边注册了第二个面向模型的工具：
+
+```
+exa_search(query: string, maxResults?: integer)   // maxResults 1-50
+```
+
+它存在的原因是一条硬结构事实：`ctx.web.search()` 按**调用方**的 `request.maxResults` 截断结果，
+而 `dsh-tool-web` 每次调用都传自己的 `searchMaxResults`——所以**任何提供方都不可能超过那个上限**，
+要抬它就得 fork agent preset。这个工具拥有自己的 `request.maxResults`，于是条数从**部署级天花板**
+变成了**每次调用的模型参数**。
+
+**这让 preset fork 变成可选的。** 两条拿到超过默认 8 条的路径：
+
+| 想要 | 怎么做 | 需要 fork preset 吗 |
+| --- | --- | --- |
+| 某次要 20 条 | `exa_search(query, maxResults: 20)`——直接用话问就行 | **不需要** |
+| 让 `/exa results 20` 生效 | `/exa` 命令 | 需要 |
+
+工具和 `web_search` 一样走 `ctx.web`，所以用的是同一个被选中的提供方、同一个检索类型、同一个
+Dynamic Highlights 设置；**只有条数不同**。它 50 的上限是自己的——动态高亮实测每条约 1.6k 字符，
+50 条已经是约 2 万 token 的上下文。
+
+`web_search` 旁边会多一段提示告诉模型什么时候该用它（日常检索仍走 `web_search`）。如果组合里没有
+`tools` 注册表，provider 照常挂载，只是没有这个工具。
+
 ## 检索类型
 
 Exa 的 `type` 就是延迟／质量的旋钮。**8 种全部对着真实 API 验证过**；同一查询、8 条结果的实测耗时：
@@ -200,7 +227,7 @@ results` 仍然能把条数**往下调**，而那个方向才是省 token 的。
 ## 开发
 
 ```sh
-node test/index.test.js    # 35 个单元测试，不需要密钥
+node test/index.test.js    # 40 个单元测试，不需要密钥
 EXA_API_KEY=... node test/live.mjs   # 打真 API，会消耗额度
 ```
 
