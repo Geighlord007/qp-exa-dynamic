@@ -219,7 +219,7 @@ tokens.
 ## Development
 
 ```sh
-node test/index.test.js    # 34 unit tests, no API key needed
+node test/index.test.js    # 35 unit tests, no API key needed
 EXA_API_KEY=... node test/live.mjs   # hits the real API, spends credit
 ```
 

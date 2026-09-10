@@ -200,7 +200,7 @@ results` 仍然能把条数**往下调**，而那个方向才是省 token 的。
 ## 开发
 
 ```sh
-node test/index.test.js    # 34 个单元测试，不需要密钥
+node test/index.test.js    # 35 个单元测试，不需要密钥
 EXA_API_KEY=... node test/live.mjs   # 打真 API，会消耗额度
 ```
 
