@@ -160,7 +160,8 @@ test("/exa accepts on, off and status, and is case/space tolerant", () => {
 		text: "Exa Dynamic Highlights: off",
 	});
 
-	// status never writes, and reports every knob
+	// status never writes, and reports every knob — including the type list, so
+	// "which types were there again" never needs a second command.
 	const status = cmd("status", true, { searchType: "deep", numResults: 5, observedCap: 8 });
 	assert.equal(status.kind, "success");
 	assert.equal(status.write, undefined);
@@ -168,6 +169,9 @@ test("/exa accepts on, off and status, and is case/space tolerant", () => {
 	assert.match(status.text, /search type is deep/);
 	assert.match(status.text, /max sources is 5/);
 	assert.match(status.text, /caps every call at 8/, "status must explain the real ceiling");
+	for (const type of SEARCH_TYPES) {
+		assert.match(status.text, new RegExp(type), `status must list the ${type} type`);
+	}
 
 	// a no-op request reports rather than writing
 	const already = cmd("on", true);

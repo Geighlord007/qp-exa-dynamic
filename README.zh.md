@@ -111,7 +111,11 @@ dsh plugin --profile web add dsh-web-search-exa-dynamic
 | `/exa type deep` | 设置检索类型 |
 | `/exa results` | 报告来源上限 |
 | `/exa results 3` | 设置来源上限 |
-| `/exa status` | 一次报全，含真实天花板 |
+| `/exa status` | 一次报全：当前状态、**可用的 type 列表**、真实天花板 |
+
+**全是裸单词，不需要任何符号**：命令**没有声明参数提示**，所以输入框不会塞进一个待编辑的模板。
+`/exa status` 顺带把检索类型列出来，想不起来有哪些 type 时不用再敲第二条；参数打错时会回一行可以
+直接照抄的示例。
 
 写入落在 `web-search-exa-dynamic` settings 命名空间的**用户层**，跨重启保留。清掉那一节即回到插件
 配置的默认值。

@@ -120,7 +120,11 @@ Typed in the composer. It runs directly against the interface and creates no mod
 | `/exa type deep` | Set the retrieval type |
 | `/exa results` | Report the source cap |
 | `/exa results 3` | Set the source cap |
-| `/exa status` | Report every knob, plus the real ceiling |
+| `/exa status` | Report every knob, the available types, and the real ceiling |
+
+Plain words, no punctuation: the command declares **no argument hint**, so the composer inserts no
+template to edit around. `/exa status` lists the retrieval types too, so "which types were there
+again" never costs a second command, and a mistyped argument replies with copy-pasteable examples.
 
 Writes land in the `web-search-exa-dynamic` settings namespace's user layer, so they survive a
 restart. Clearing that section returns the plugin to its configured defaults.
