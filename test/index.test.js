@@ -430,6 +430,21 @@ test("available() is false without a key and true with one", () => {
 // cordis: it answers ctx.inject for the two optional services and records what
 // the plugin registered.
 
+test("the command declares input, or the composer never routes arguments to it", async () => {
+	// dsh-client-ui-commands/lib/client.js:747 claims a parameterised line only
+	// when `desc.input !== undefined`; line 751 sends everything else to the
+	// model as an ordinary chat message. Dropping this field silently broke
+	// `/exa status`, `/exa type deep` and `/exa results 3` in the Web composer
+	// while leaving bare `/exa` working — which is exactly what got reported.
+	const { ctx, state } = makeCtx();
+	await apply(ctx, { apiKey: "test-key" });
+
+	const command = state.commands[0];
+	assert.notEqual(command.input, undefined, "input must be declared or arguments are never claimed");
+	assert.equal(typeof command.input.hint, "string", "the claim carries input.hint to the composer");
+	assert.ok(command.input.hint.length > 0);
+});
+
 function makeCtx({ withSettings = true, withCommands = true, failUpdate = false, failRegister = false } = {}) {
 	const state = { providers: [], commands: [], sections: [], updates: [], section: {} };
 	const scope = {

@@ -173,17 +173,18 @@ snippet，编造一个会让 seam 说谎。而 `deep*` 真正值钱的是跨来�
 | 20 | 8 | 8（夹取） |
 
 `/exa status` 和 `/exa results` 会报出 provider **观测到的真实天花板**，所以被夹取时是明说而不是
-静默生效。要抬天花板本身，改一次 `tool-web` 那一行：
+静默生效。
 
-```yaml
-- id: tool-web
-  name: '@deepseek-ai/dsh-tool-web'
-  config:
-    searchMaxResults: 20
-```
+**在 Web 端，抬天花板不是改 profile patch 能解决的。** `dsh-web-app` 把宿主那行 `tool-web` 设为
+`disabled: true`——因为宿主侧只有 `web` 服务和它的搜索提供方，面向模型的**工具是每会话一份**的，
+真正生效的那份来自 **agent preset**。随附的 `standard` preset 里那行只有 `fetch` 和
+`searchTimeoutMs`，没有 `searchMaxResults`，于是取 schema 默认值 8。**往 profile patch 里写
+`tool-web` 只会落在被禁用的宿主行上，什么都不做。**
 
-抬一次之后，上面那些就都变成运行时的 `/exa results` 决定了。注意这抬的是**当前生效的那个提供方**的
-上限，所以切回 DeepSeek 时同样受影响。
+所以要改就得 fork preset：把 `standard` 复制到 `$DSH_HOME/.agent-presets/`，在它的 `tool-web` 行加
+`searchMaxResults`，再选为默认。这是笔真实的账——副本不会跟随随附 preset 的上游更新，而默认值是在
+**创建会话时**读取的，运行中的会话仍停在它们当初组装的 preset 上。多数情况下留在 8 更划算：`/exa
+results` 仍然能把条数**往下调**，而那个方向才是省 token 的。
 
 ## 已知限制
 

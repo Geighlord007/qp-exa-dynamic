@@ -186,18 +186,21 @@ That makes this plugin's `numResults` one-directional: it can pull the count dow
 | 20 | 8 | 8 (clamped) |
 
 `/exa status` and `/exa results` report the ceiling the provider actually observed, so a clamped
-value is explained rather than silently applied. To raise the ceiling itself, set `searchMaxResults`
-on the `tool-web` row once:
+value is explained rather than silently applied.
 
-```yaml
-- id: tool-web
-  name: '@deepseek-ai/dsh-tool-web'
-  config:
-    searchMaxResults: 20
-```
+**Raising the ceiling is not a profile-patch edit in the Web app.** `dsh-web-app` disables the host
+`tool-web` row — `- id: tool-web` / `disabled: true` — because only the `web` service and its search
+provider are host-side; the model-facing tool is per session, and the one that actually runs comes
+from the **agent preset**. The shipped `standard` preset's row carries `fetch` and `searchTimeoutMs`
+and no `searchMaxResults`, so it takes the schema default of 8. A profile patch targeting `tool-web`
+lands on the disabled host row and does nothing at all.
 
-Raise it once and everything above stays a runtime `/exa results` decision. Note this raises the cap
-for whichever provider is active, so it also affects the DeepSeek provider if you switch back.
+Changing it therefore means forking the preset: copy `standard` into `$DSH_HOME/.agent-presets/`, add
+`searchMaxResults` to its `tool-web` row, and select it as the default. That is a real trade — a copy
+does not track upstream updates to the shipped preset, and the default is read when a session is
+created, so running sessions keep the preset they assembled with. For most uses leaving it at 8 is
+the better deal: `/exa results` still pulls the count *down*, which is the direction that saves
+tokens.
 
 ## Known limitations
 
