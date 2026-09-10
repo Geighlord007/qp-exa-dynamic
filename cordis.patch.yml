@@ -1,9 +1,9 @@
-# Bundle patch for dsh-web-search-exa-dynamic.
+# Bundle patch for qp-exa-dynamic.
 #
 # Inserts the provider row only. It deliberately does NOT re-declare dsh-base's
 # `- id: web` row: duplicate ids across bundle layers fail the loader, and the
 # user's own profile cordis.patch.yml (applied last) is the layer allowed to
 # override it. See README.md for the one-line selection override.
 - insert:
-    - id: web-search-exa-dynamic
-      name: 'dsh-web-search-exa-dynamic'
+    - id: qp-exa-dynamic
+      name: 'qp-exa-dynamic'

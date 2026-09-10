@@ -1,4 +1,4 @@
-# dsh-web-search-exa-dynamic
+# qp-exa-dynamic
 
 [English](README.md) | 简体中文
 
@@ -7,7 +7,7 @@
 **默认开启 Exa Dynamic Highlights**，并提供 `/exa` 命令，在运行时改高亮、检索类型和返回条数。
 
 ```sh
-dsh plugin --profile web add dsh-web-search-exa-dynamic
+dsh plugin --profile web add qp-exa-dynamic
 ```
 
 ## 为什么需要它
@@ -43,7 +43,7 @@ Dynamic Highlights 不是一刀切截断：它把所有召回文档拼成一条�
 ## 安装
 
 ```sh
-dsh plugin --profile web add dsh-web-search-exa-dynamic
+dsh plugin --profile web add qp-exa-dynamic
 ```
 
 包自带 `dsh.bundle` 清单，安装后 bundle patch 会**自动插入 provider 行**，不需要手写。
@@ -64,8 +64,8 @@ dsh plugin --profile web add dsh-web-search-exa-dynamic
 然后给密钥，两种方式。写进插件配置：
 
 ```yaml
-- id: web-search-exa-dynamic
-  name: dsh-web-search-exa-dynamic
+- id: qp-exa-dynamic
+  name: qp-exa-dynamic
   config:
     apiKey: '你的 Exa 密钥'
 ```
@@ -117,7 +117,7 @@ dsh plugin --profile web add dsh-web-search-exa-dynamic
 `/exa status` 顺带把检索类型列出来，想不起来有哪些 type 时不用再敲第二条；参数打错时会回一行可以
 直接照抄的示例。
 
-写入落在 `web-search-exa-dynamic` settings 命名空间的**用户层**，跨重启保留。清掉那一节即回到插件
+写入落在 `qp-exa-dynamic` settings 命名空间的**用户层**，跨重启保留。清掉那一节即回到插件
 配置的默认值。
 
 实测同一个 provider 实例、同一个查询：关掉动态高亮让同一次搜索从 12,716 字符变成 57,958 字符——
@@ -237,7 +237,7 @@ EXA_API_KEY=... node test/live.mjs   # 打真 API，会消耗额度
 ## 卸载
 
 ```sh
-dsh plugin --profile web remove dsh-web-search-exa-dynamic
+dsh plugin --profile web remove qp-exa-dynamic
 ```
 
 把 `cordis.patch.yml` 里的 `web` 覆盖删掉即回到内置的 DeepSeek 搜索。那个改动是热加载的，立刻生效。

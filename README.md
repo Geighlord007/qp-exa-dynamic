@@ -1,4 +1,4 @@
-# dsh-web-search-exa-dynamic
+# qp-exa-dynamic
 
 English | [简体中文](README.zh.md)
 
@@ -8,7 +8,7 @@ An [Exa](https://exa.ai)-backed `WebSearchProvider` for the
 result count at runtime.
 
 ```sh
-dsh plugin --profile web add dsh-web-search-exa-dynamic
+dsh plugin --profile web add qp-exa-dynamic
 ```
 
 ## Why this exists
@@ -48,7 +48,7 @@ pages keep more context and redundant ones get less.
 ## Install
 
 ```sh
-dsh plugin --profile web add dsh-web-search-exa-dynamic
+dsh plugin --profile web add qp-exa-dynamic
 ```
 
 The package declares a `dsh.bundle` manifest, so its bundle patch inserts the provider row for you —
@@ -70,8 +70,8 @@ To select it, override the `web` row in `$DSH_HOME/profiles/web/cordis.patch.yml
 Then give it a key, either as plugin config:
 
 ```yaml
-- id: web-search-exa-dynamic
-  name: dsh-web-search-exa-dynamic
+- id: qp-exa-dynamic
+  name: qp-exa-dynamic
   config:
     apiKey: 'your-exa-api-key'
 ```
@@ -126,7 +126,7 @@ Plain words, no punctuation: the command declares **no argument hint**, so the c
 template to edit around. `/exa status` lists the retrieval types too, so "which types were there
 again" never costs a second command, and a mistyped argument replies with copy-pasteable examples.
 
-Writes land in the `web-search-exa-dynamic` settings namespace's user layer, so they survive a
+Writes land in the `qp-exa-dynamic` settings namespace's user layer, so they survive a
 restart. Clearing that section returns the plugin to its configured defaults.
 
 Measured on one provider instance, one query: switching Dynamic Highlights off took the same search
@@ -259,7 +259,7 @@ per file with piped stdio, which fails with `spawn EPERM` in a restricted sandbo
 ## Uninstall
 
 ```sh
-dsh plugin --profile web remove dsh-web-search-exa-dynamic
+dsh plugin --profile web remove qp-exa-dynamic
 ```
 
 Remove the `web` override from `cordis.patch.yml` to return to the built-in DeepSeek search. That

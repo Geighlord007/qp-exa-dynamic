@@ -11,7 +11,7 @@ Initial release.
 - `highlightsPerUrl` is never sent — measured against the live API, Exa ignores it (identical payloads
   for values 1 and 5). `highlightsMaxCharacters` is the working per-page cap when dynamic is off.
 - `/exa` command: toggle highlights, set the retrieval type, set the source cap, or report status —
-  all at runtime, persisted through the plugin's `web-search-exa-dynamic` settings namespace.
+  all at runtime, persisted through the plugin's `qp-exa-dynamic` settings namespace.
 - All eight Exa retrieval types (`auto`, `keyword`, `neural`, `instant`, `fast`, `deep-lite`, `deep`,
   `deep-reasoning`), each verified against the live API. The first-party provider's schema lists only
   three.

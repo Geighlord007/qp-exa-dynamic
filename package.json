@@ -1,9 +1,9 @@
 {
-  "name": "dsh-web-search-exa-dynamic",
+  "name": "qp-exa-dynamic",
   "version": "0.1.0",
-  "private": true,
-  "description": "Exa web search provider for the dsh ctx.web seam, with Dynamic Highlights enabled by default.",
+  "description": "Exa web search provider for the DeepSeek Harness ctx.web seam, with Dynamic Highlights on by default, an /exa command to change highlights, search type and result count at runtime, and an exa_search tool that owns its own result cap.",
   "license": "MIT",
+  "author": "Geighlord007",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -14,8 +14,30 @@
   },
   "files": [
     "lib",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "exa",
+    "web-search",
+    "search-provider",
+    "dynamic-highlights"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Geighlord007/qp-exa-dynamic.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Geighlord007/qp-exa-dynamic/issues"
+  },
+  "homepage": "https://github.com/Geighlord007/qp-exa-dynamic#readme",
   "scripts": {
     "test": "node --test test/index.test.js",
     "live": "node test/live.mjs"

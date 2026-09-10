@@ -1,5 +1,5 @@
 /**
- * Unit tests for dsh-web-search-exa-dynamic.
+ * Unit tests for qp-exa-dynamic.
  *
  * These are the tests that matter for this package's whole reason to exist:
  * the beta opt-in must ride the request exactly when the body asks for
