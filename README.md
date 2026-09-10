@@ -153,6 +153,10 @@ That makes the preset fork optional. Two ways past the default 8 sources:
 | 20 sources for one question | `exa_search(query, maxResults: 20)` — just ask in words | no |
 | `/exa results 20` to work | the `/exa` command | yes |
 
+`/exa results` is a fine setting to keep even without the fork, because it is what this tool falls
+back to: with `/exa results 20` set, `exa_search(query)` with no `maxResults` returns 20. It is
+`web_search` alone that stays clamped to the deployment's ceiling.
+
 The tool goes through `ctx.web` like `web_search` does, so it uses the same selected provider, the
 same search type and the same Dynamic Highlights setting; only the count differs. Its ceiling of 50
 is its own — dynamic highlights measured ~1.6k characters per source, so 50 is already ~20k tokens

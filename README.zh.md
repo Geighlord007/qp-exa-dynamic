@@ -143,6 +143,9 @@ exa_search(query: string, maxResults?: integer)   // maxResults 1-50
 | 某次要 20 条 | `exa_search(query, maxResults: 20)`——直接用话问就行 | **不需要** |
 | 让 `/exa results 20` 生效 | `/exa` 命令 | 需要 |
 
+**即使不 fork，`/exa results` 也值得设**——因为这个工具不传 `maxResults` 时就回退到它：
+设了 `/exa results 20` 之后，`exa_search(query)` 会返回 20 条。被夹在部署上限里的**只有 `web_search`**。
+
 工具和 `web_search` 一样走 `ctx.web`，所以用的是同一个被选中的提供方、同一个检索类型、同一个
 Dynamic Highlights 设置；**只有条数不同**。它 50 的上限是自己的——动态高亮实测每条约 1.6k 字符，
 50 条已经是约 2 万 token 的上下文。
