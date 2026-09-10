@@ -195,7 +195,7 @@ snippet，编造一个会让 seam 说谎。而 `deep*` 真正值钱的是跨来�
 ## 开发
 
 ```sh
-node test/index.test.js    # 32 个单元测试，不需要密钥
+node test/index.test.js    # 34 个单元测试，不需要密钥
 EXA_API_KEY=... node test/live.mjs   # 打真 API，会消耗额度
 ```
 

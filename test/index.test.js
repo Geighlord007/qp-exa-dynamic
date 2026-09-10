@@ -235,6 +235,46 @@ test("/exa type <t> sets the retrieval type, and rejects an unknown one", () => 
 	assert.match(bad.text, /unknown type "turbo"/);
 });
 
+test("the hint template's brackets are transparent", () => {
+	// The composer inserts input.hint as an editable template, so people end up
+	// submitting the brackets along with their value. Reported from a real
+	// session: `/exa [on]` was rejected as an unknown argument.
+	assert.deepEqual(cmd("[on]", false), {
+		kind: "success",
+		write: { dynamicHighlights: true },
+		text: "Exa Dynamic Highlights: on",
+	});
+	assert.deepEqual(cmd("<off>", true), {
+		kind: "success",
+		write: { dynamicHighlights: false },
+		text: "Exa Dynamic Highlights: off",
+	});
+	assert.equal(cmd('"status"', true).kind, "success");
+	assert.match(cmd("[status]", true).text, /is on/);
+
+	// ...including when only the value is bracketed, as the hint suggests.
+	assert.deepEqual(cmd("type [deep]", true), {
+		kind: "success",
+		write: { searchType: "deep" },
+		text: "Exa search type: deep",
+	});
+	assert.deepEqual(cmd("results [3]", true), {
+		kind: "success",
+		write: { numResults: 3 },
+		text: "Exa returns at most 3 sources",
+	});
+});
+
+test("an untouched hint template is reported, not guessed at", () => {
+	const outcome = cmd("[on|off|status|type <type>]", true);
+
+	assert.equal(outcome.kind, "error");
+	assert.equal(outcome.write, undefined);
+	assert.match(outcome.text, /hint template/);
+	// Every option in it is a different action, so it must not silently pick one.
+	assert.match(outcome.text, /on, off, status/);
+});
+
 test("/exa rejects an unknown argument instead of guessing", () => {
 	const bad = cmd("maybe", true);
 	assert.equal(bad.kind, "error");

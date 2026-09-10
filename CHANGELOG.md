@@ -21,4 +21,9 @@ Initial release.
 - The provider registers before the optional settings and command wiring, which are best-effort: a
   duplicate settings namespace or a missing command registry degrades the plugin instead of taking
   the search path down.
-- 32 unit tests, no API key required.
+- 34 unit tests, no API key required.
+- The `/exa` argument parser treats the command hint template's punctuation as transparent, so
+  `/exa [on]`, `/exa <off>`, `/exa "status"`, `/exa type [deep]` and `/exa results [3]` all read the
+  way they were meant. The composer inserts `input.hint` as an editable template, and a submitted
+  `/exa [on]` was being rejected as an unknown argument. Submitting the template untouched is
+  reported as such rather than guessed at, because each of its options is a different action.
