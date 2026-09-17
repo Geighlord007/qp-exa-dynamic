@@ -260,6 +260,29 @@ EXA_API_KEY=... node test/live.mjs   # hits the real API, spends credit
 Run the test file directly rather than through `node --test`: the test runner spawns a child process
 per file with piped stdio, which fails with `spawn EPERM` in a restricted sandbox.
 
+### Installing from a checkout
+
+`dsh plugin --profile web add <path>` records a `link:` dependency, and the profile links the package
+by name. Node resolves a linked module's own imports from its **real** path, not from the link inside
+the profile — so a checkout that lives outside `$DSH_HOME/profiles/` has no `node_modules` ancestor
+able to reach the harness's packages, and every `@deepseek-ai/dsh-*` import fails with
+`ERR_MODULE_NOT_FOUND`. The plugin mounts, then throws on its first import.
+
+Give the checkout a `node_modules` that points at the **same** instances the runtime uses:
+
+```powershell
+$plugin = "<path to this checkout>"
+$hoist  = "$env:USERPROFILE\.dsh\profiles\node_modules\@deepseek-ai"
+New-Item -ItemType Directory -Force "$plugin\node_modules\@deepseek-ai" | Out-Null
+foreach ($pkg in @("dsh-web", "dsh-tools", "dsh-launch-environment", "schemastery")) {
+  cmd /c mklink /J "$plugin\node_modules\@deepseek-ai\$pkg" "$hoist\$pkg"
+}
+```
+
+Junctions rather than a second `pnpm install`, deliberately: `@deepseek-ai/dsh-tools` is a runtime
+singleton, and a nested copy of it breaks the agent loop before the provider is ever called. Pointing
+every link at the hoist directory guarantees one physical instance for each package.
+
 ## Uninstall
 
 ```sh

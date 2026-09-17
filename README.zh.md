@@ -237,6 +237,28 @@ EXA_API_KEY=... node test/live.mjs   # 打真 API，会消耗额度
 请**直接运行测试文件**，不要用 `node --test`：后者的 runner 会为每个文件 spawn 子进程，在受限沙箱下
 会以 `spawn EPERM` 失败。
 
+### 从本地检出安装
+
+`dsh plugin --profile web add <路径>` 记下的是一个 `link:` 依赖，profile 按**包名**链接它。而 Node 解析
+被链接模块自身的 import 时，用的是它的**真实路径**、不是 profile 里那个链接——所以放在
+`$DSH_HOME/profiles/` 之外的检出**没有能到达 harness 各包的 `node_modules` 祖先目录**，每一个
+`@deepseek-ai/dsh-*` 导入都会以 `ERR_MODULE_NOT_FOUND` 失败：插件挂载上了，然后在第一个 import 上炸。
+
+给它配一份指向**运行时同一批实例**的 `node_modules`：
+
+```powershell
+$plugin = "<这个检出的路径>"
+$hoist  = "$env:USERPROFILE\.dsh\profiles\node_modules\@deepseek-ai"
+New-Item -ItemType Directory -Force "$plugin\node_modules\@deepseek-ai" | Out-Null
+foreach ($pkg in @("dsh-web", "dsh-tools", "dsh-launch-environment", "schemastery")) {
+  cmd /c mklink /J "$plugin\node_modules\@deepseek-ai\$pkg" "$hoist\$pkg"
+}
+```
+
+用 junction 而不是再跑一次 `pnpm install`，是**刻意的**：`@deepseek-ai/dsh-tools` 是运行时单例，
+嵌套一份副本会让 agent loop 在 provider 被调用之前就崩。全部指向 hoist 目录，才能保证每个包只有
+一个物理实例。
+
 ## 卸载
 
 ```sh
