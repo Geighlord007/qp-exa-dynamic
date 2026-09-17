@@ -2,6 +2,8 @@
 
 [English](README.md) | 简体中文
 
+[![npm](https://img.shields.io/npm/v/qp-exa-dynamic)](https://www.npmjs.com/package/qp-exa-dynamic)
+
 [Exa](https://exa.ai) 支撑的 `WebSearchProvider`，接入
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 `ctx.web` seam。
 **默认开启 Exa Dynamic Highlights**，并提供 `/exa` 命令，在运行时改高亮、检索类型和返回条数。

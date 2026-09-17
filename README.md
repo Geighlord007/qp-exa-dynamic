@@ -2,6 +2,8 @@
 
 English | [简体中文](README.zh.md)
 
+[![npm](https://img.shields.io/npm/v/qp-exa-dynamic)](https://www.npmjs.com/package/qp-exa-dynamic)
+
 An [Exa](https://exa.ai)-backed `WebSearchProvider` for the
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) `ctx.web` seam, with Exa
 **Dynamic Highlights** on by default and an `/exa` command that changes highlights, search type and
