@@ -1,6 +1,6 @@
 {
   "name": "qp-exa-dynamic",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Exa web search provider for the DeepSeek Harness ctx.web seam, with Dynamic Highlights on by default, an /exa command to change highlights, search type and result count at runtime, and an exa_search tool that owns its own result cap.",
   "license": "MIT",
   "author": "Geighlord007",
@@ -49,14 +49,14 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
-    "@deepseek-ai/dsh-launch-environment": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-tools": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-web": "^0.1.5-rc.1"
+    "@deepseek-ai/dsh-launch-environment": ">=0.2.0-rc.2 <0.3.0-0",
+    "@deepseek-ai/dsh-tools": ">=0.2.0-rc.2 <0.3.0-0",
+    "@deepseek-ai/dsh-web": ">=0.2.0-rc.2 <0.3.0-0"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "^3.18.2"
+    "@deepseek-ai/schemastery": "^3.18.4"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.19"
   }
 }

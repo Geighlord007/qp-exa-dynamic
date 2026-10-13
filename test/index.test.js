@@ -19,12 +19,15 @@ import {
 	SETTINGS_NAMESPACE,
 	TOOL_MAX_RESULTS_LIMIT,
 	TOOL_NAME,
+	VOLATILE_WRITE,
 	apply,
 	buildSearchBody,
 	buildSearchHeaders,
 	clampToolMaxResults,
 	formatToolSources,
 	interpretExaCommand,
+	isVolatileRef,
+	readLiveConfig,
 	resolveOptions,
 } from "../lib/index.js";
 
@@ -464,7 +467,7 @@ test("formatToolSources carries the untrusted-content notice and markdown links"
 
 test("apply() registers the exa_search tool and the guidance beside web_search's", async () => {
 	const { ctx, state } = makeCtx();
-	await apply(ctx, { apiKey: "test-key" });
+	await apply(ctx, state.config);
 
 	const tool = state.tools.find((candidate) => candidate.name === TOOL_NAME);
 	assert.notEqual(tool, undefined, "the tool must be registered under its own name");
@@ -481,29 +484,77 @@ test("apply() registers the exa_search tool and the guidance beside web_search's
 	assert.match(state.promptSections[0].text({ scope: undefined }), /maxResults/);
 });
 
-test("the tool owns request.maxResults instead of inheriting tool-web's cap", async () => {
+test("the tool calls Exa directly, bypassing the seam's provider selection", async () => {
 	const { ctx, state } = makeCtx();
-	const calls = [];
-	ctx.web.search = async (request) => {
-		calls.push(request);
+	let seamCalls = 0;
+	ctx.web.search = async () => {
+		seamCalls += 1;
 		return { sources: [], truncated: false };
 	};
-	await apply(ctx, { apiKey: "test-key" });
+	const many = Array.from({ length: 9 }, (_, index) => ({
+		url: `https://s${index}.example`,
+		highlights: [`snippet ${index}`],
+	}));
+	const calls = stubFetch({ payload: { results: many } });
+	await apply(ctx, state.config);
 	const tool = state.tools.find((candidate) => candidate.name === TOOL_NAME);
 
-	await tool.execute({ query: "q", maxResults: 20 }, { signal: undefined });
-	assert.deepEqual(calls[0], { query: "q", maxResults: 20 });
+	const bounded = await tool.execute({ query: "q", maxResults: 3 }, { signal: undefined });
 
-	await tool.execute({ query: "q", maxResults: 1000 }, { signal: undefined });
-	assert.deepEqual(calls[1], { query: "q", maxResults: TOOL_MAX_RESULTS_LIMIT }, "the bound is ours");
+	assert.equal(seamCalls, 0, "the tool must not hand the query to ctx.web, whose provider is the deployment's default");
+	assert.equal(calls.length, 1, "the tool must call Exa's own endpoint");
+	assert.equal(calls[0].url, "https://api.exa.ai/search");
+	assert.equal(calls[0].body.numResults, 3, "the tool's own bound must reach Exa");
+	assert.equal(bounded.sources.length, 3, "the seam's truncation is applied here instead");
+	assert.equal(bounded.truncated, true);
+
+	const unbounded = await tool.execute({ query: "q" }, { signal: undefined });
+	assert.equal(calls[1].body.numResults, 8, "omitted means the configured default decides");
+	assert.equal(unbounded.truncated, false, "nothing was asked for, so nothing was cut");
+});
+
+test("the credential store supplies the key when the config carries none", async () => {
+	const { ctx, state } = makeCtx({ apiKey: "" });
+	const asked = [];
+	state.credentials = {
+		resolve: async (ref) => {
+			asked.push(ref);
+			return { value: "from-credentials" };
+		},
+	};
+	const calls = stubFetch();
+	await apply(ctx, state.config);
+	const tool = state.tools.find((candidate) => candidate.name === TOOL_NAME);
 
 	await tool.execute({ query: "q" }, { signal: undefined });
-	assert.deepEqual(calls[2], { query: "q" }, "omitted means the configured default decides");
+
+	assert.deepEqual(asked, ["EXA_API_KEY"], "the configured apiKeyEnv names the reference consulted");
+	assert.equal(headerOf(calls[0].init.headers, "authorization"), "Bearer from-credentials");
+});
+
+test("a search with no key source fails precisely instead of answering from the default provider", async () => {
+	const provider = new ExaSearchProvider(() => ({ ...BASE_OPTIONS, apiKey: "" }), async () => "");
+	const calls = stubFetch();
+
+	await assert.rejects(
+		() => provider.search({ query: "q" }, undefined),
+		(error) => error.code === "WEB_PROVIDER_ERROR" && /no Exa API key/.test(error.message),
+	);
+	assert.equal(calls.length, 0, "a missing key must never reach the network");
+});
+
+test("available() accepts a declared key source without having to read it", () => {
+	assert.equal(
+		providerFor({ apiKey: "", apiKeyEnv: "EXA_API_KEY" }).available(),
+		true,
+		"a configured source counts as usable; resolving it is the search path's job",
+	);
+	assert.equal(providerFor({ apiKey: "", apiKeyEnv: "" }).available(), false, "no key and no source is unusable");
 });
 
 test("with no tool registry the provider still mounts", async () => {
 	const { ctx, state } = makeCtx({ withTools: false });
-	await apply(ctx, { apiKey: "test-key" });
+	await apply(ctx, state.config);
 
 	assert.equal(state.tools.length, 0);
 	assert.equal(state.promptSections.length, 0);
@@ -518,7 +569,7 @@ test("the command declares input, or the composer never routes arguments to it",
 	// `/exa status`, `/exa type deep` and `/exa results 3` in the Web composer
 	// while leaving bare `/exa` working — which is exactly what got reported.
 	const { ctx, state } = makeCtx();
-	await apply(ctx, { apiKey: "test-key" });
+	await apply(ctx, state.config);
 
 	const command = state.commands[0];
 	assert.notEqual(command.input, undefined, "input must be declared or arguments are never claimed");
@@ -526,28 +577,47 @@ test("the command declares input, or the composer never routes arguments to it",
 	assert.ok(command.input.hint.length > 0);
 });
 
+/**
+ * A stand-in for a DSH 0.2 volatile config reference.
+ *
+ * The Loader hands every `.volatile()` field to `apply` as one of these, and a
+ * settings write reaches it as the `[VOLATILE_WRITE](value)` call cosmokit's
+ * `updateVolatile` makes. Reproducing the shape is what makes these tests
+ * exercise the live-update path the plugin relies on rather than a copy of it.
+ */
+function volatileRef(initial) {
+	let current = initial;
+	return {
+		get: () => current,
+		[VOLATILE_WRITE]: (next) => {
+			current = next;
+		},
+	};
+}
+
 function makeCtx({
 	withSettings = true,
 	withCommands = true,
 	withTools = true,
 	failUpdate = false,
-	failRegister = false,
+	apiKey = "test-key",
+	apiKeyEnv,
 } = {}) {
 	const state = {
 		providers: [],
 		commands: [],
-		sections: [],
 		updates: [],
-		section: {},
 		tools: [],
 		promptSections: [],
-	};
-	const scope = {
-		get: () => state.section,
-		update: async (patch) => {
-			if (failUpdate) throw new Error("SETTINGS_CONFLICT");
-			state.updates.push(patch);
-			state.section = { ...state.section, ...patch };
+		/** Stands in for `ctx.get("credentials")`; set by the tests that need it. */
+		credentials: undefined,
+		// What DSH 0.2's Loader hands `apply`: writable fields as live
+		// references, everything else plain. `settings.update` below mutates
+		// these in place, exactly as the Loader's volatile commit does.
+		config: {
+			apiKey: volatileRef(apiKey),
+			...(apiKeyEnv === undefined ? {} : { apiKeyEnv: volatileRef(apiKeyEnv) }),
+			dynamicHighlights: volatileRef(true),
 		},
 	};
 	const root = {
@@ -555,17 +625,20 @@ function makeCtx({
 			registerSearchProvider: (provider) => state.providers.push(provider),
 			search: async () => ({ sources: [], truncated: false }),
 		},
+		get: (serviceName) => (serviceName === "credentials" ? state.credentials : undefined),
 		effect: () => () => {},
 		inject(names, callback) {
 			const child = { ...root };
 			if (names.includes("settings")) {
 				if (!withSettings) return;
 				child.settings = {
-					register: (ns, schema, options) => {
-						if (failRegister) throw new Error(`settings namespace "${ns}" is already registered`);
-						state.sections.push({ ns, base: options?.base });
-						state.section = { ...(options?.base ?? {}) };
-						return scope;
+					update: async (ns, patch) => {
+						if (failUpdate) throw new Error("SETTINGS_CONFLICT");
+						state.updates.push({ ns, patch });
+						for (const [key, value] of Object.entries(patch)) {
+							const field = state.config[key];
+							if (isVolatileRef(field)) field[VOLATILE_WRITE](value);
+						}
 					},
 				};
 			}
@@ -607,17 +680,18 @@ function makeCtx({
 /** The signal a real dispatcher always supplies. */
 const signal = () => new AbortController().signal;
 
-test("apply() registers the provider, the settings section and the /exa command", async () => {
+test("apply() registers the provider and the /exa command", async () => {
 	const { ctx, state } = makeCtx();
-	await apply(ctx, { apiKey: "test-key" });
+	await apply(ctx, state.config);
 
 	assert.equal(state.providers.length, 1);
 	assert.equal(state.providers[0].id, "exa");
 	assert.equal(state.providers[0].available(), true);
 
-	assert.equal(state.sections.length, 1);
-	assert.equal(state.sections[0].ns, SETTINGS_NAMESPACE);
-	assert.equal(state.sections[0].base.apiKey, "test-key");
+	// 0.2 removed the register step entirely: the settings entry already exists
+	// in the composed profile, so there is nothing left to collide on mount and
+	// mounting must not write the document.
+	assert.equal(state.updates.length, 0, "mounting must never write settings");
 
 	assert.equal(state.commands.length, 1);
 	assert.equal(state.commands[0].name, COMMAND_NAME);
@@ -626,7 +700,7 @@ test("apply() registers the provider, the settings section and the /exa command"
 
 test("end to end: /exa off persists, and the next search drops the beta header", async () => {
 	const { ctx, state } = makeCtx();
-	await apply(ctx, { apiKey: "test-key" });
+	await apply(ctx, state.config);
 	const provider = state.providers[0];
 	const calls = stubFetch();
 
@@ -635,7 +709,11 @@ test("end to end: /exa off persists, and the next search drops the beta header",
 	await provider.search({ query: "after" }, undefined);
 
 	assert.equal(result.kind, "success");
-	assert.deepEqual(state.updates, [{ dynamicHighlights: false }], "the toggle must persist through the scope");
+	assert.deepEqual(
+		state.updates,
+		[{ ns: SETTINGS_NAMESPACE, patch: { dynamicHighlights: false } }],
+		"the toggle must persist through the settings service, addressed by the Loader entry id",
+	);
 
 	assert.deepEqual(calls[0].body.contents, { highlights: { dynamic: true } });
 	assert.equal(headerOf(calls[0].init.headers, DYNAMIC_BETA_HEADER), DYNAMIC_BETA_VALUE);
@@ -645,7 +723,7 @@ test("end to end: /exa off persists, and the next search drops the beta header",
 
 test("/exa status reports without writing, and a bad argument never writes", async () => {
 	const { ctx, state } = makeCtx();
-	await apply(ctx, { apiKey: "test-key" });
+	await apply(ctx, state.config);
 	const command = state.commands[0];
 
 	const status = await command.handler({ rawInput: "status", signal: signal() });
@@ -660,10 +738,10 @@ test("/exa status reports without writing, and a bad argument never writes", asy
 
 test("with no settings service the command still toggles, in memory", async () => {
 	const { ctx, state } = makeCtx({ withSettings: false });
-	await apply(ctx, { apiKey: "test-key" });
+	await apply(ctx, state.config);
 	const calls = stubFetch();
 
-	assert.equal(state.sections.length, 0);
+	assert.equal(state.updates.length, 0);
 	const result = await state.commands[0].handler({ rawInput: "", signal: signal() });
 	assert.equal(result.kind, "success");
 
@@ -674,7 +752,7 @@ test("with no settings service the command still toggles, in memory", async () =
 
 test("with no command service the provider still mounts", async () => {
 	const { ctx, state } = makeCtx({ withCommands: false });
-	await apply(ctx, { apiKey: "test-key" });
+	await apply(ctx, state.config);
 
 	assert.equal(state.commands.length, 0);
 	assert.equal(state.providers.length, 1);
@@ -683,7 +761,7 @@ test("with no command service the provider still mounts", async () => {
 
 test("a rejected settings write settles as an error result, never a throw", async () => {
 	const { ctx, state } = makeCtx({ failUpdate: true });
-	await apply(ctx, { apiKey: "test-key" });
+	await apply(ctx, state.config);
 
 	const result = await state.commands[0].handler({ rawInput: "off", signal: signal() });
 	assert.equal(result.kind, "error");
@@ -691,21 +769,32 @@ test("a rejected settings write settles as an error result, never a throw", asyn
 	assert.deepEqual(state.updates, []);
 });
 
-test("a duplicate settings namespace degrades to in-memory instead of killing the provider", async () => {
-	const { ctx, state } = makeCtx({ failRegister: true });
-	await apply(ctx, { apiKey: "test-key" });
+test("readLiveConfig unwraps volatile references and passes plain values through", () => {
+	const ref = volatileRef("live");
+	const config = { ref, plain: 7 };
+
+	assert.equal(isVolatileRef(ref), true);
+	assert.equal(isVolatileRef({ get: () => 1 }), false, "a lookalike without the cosmokit write symbol is not a reference");
+	assert.deepEqual(readLiveConfig(config), { ref: "live", plain: 7 });
+
+	ref[VOLATILE_WRITE]("updated");
+	assert.deepEqual(
+		readLiveConfig(config),
+		{ ref: "updated", plain: 7 },
+		"a snapshot must follow the live reference rather than copy it once",
+	);
+});
+
+test("a settings write reaches the next search through the live reference", async () => {
+	const { ctx, state } = makeCtx();
+	await apply(ctx, state.config);
 	const calls = stubFetch();
 
-	// The provider still mounts and still serves searches.
-	assert.equal(state.providers.length, 1);
-	assert.equal(state.providers[0].available(), true);
+	// This is the Loader's volatile commit, applied to the very reference the
+	// plugin re-reads on every operation — no /exa command in the path at all.
+	state.config.dynamicHighlights[VOLATILE_WRITE](false);
 	await state.providers[0].search({ query: "q" }, undefined);
-	assert.deepEqual(calls[0].body.contents, { highlights: { dynamic: true } });
 
-	// And /exa still toggles, via the in-memory path.
-	assert.equal(state.sections.length, 0);
-	const toggled = await state.commands[0].handler({ rawInput: "off", signal: signal() });
-	assert.equal(toggled.kind, "success");
-	await state.providers[0].search({ query: "q2" }, undefined);
-	assert.deepEqual(calls[1].body.contents, { highlights: true });
+	assert.deepEqual(calls[0].body.contents, { highlights: true });
+	assert.equal(headerOf(calls[0].init.headers, DYNAMIC_BETA_HEADER), undefined);
 });

@@ -6,8 +6,9 @@ English | [简体中文](README.zh.md)
 
 An [Exa](https://exa.ai)-backed `WebSearchProvider` for the
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) `ctx.web` seam, with Exa
-**Dynamic Highlights** on by default and an `/exa` command that changes highlights, search type and
-result count at runtime.
+**Dynamic Highlights** on by default, an `/exa` command that changes highlights, search type and
+result count at runtime, and an `exa_search` tool that reaches Exa **on demand** — without changing
+the provider the rest of the profile searches with.
 
 ```sh
 dsh plugin --profile web add qp-exa-dynamic
@@ -56,7 +57,9 @@ dsh plugin --profile web add qp-exa-dynamic
 The package declares a `dsh.bundle` manifest, so its bundle patch inserts the provider row for you —
 no hand-written patch entry is needed.
 
-To select it, override the `web` row in `$DSH_HOME/profiles/web/cordis.patch.yml`:
+**Optional.** The `exa_search` tool reaches Exa on demand without any of this; do it only to make Exa
+the provider `web_search` itself uses. Override the `web` row in
+`$DSH_HOME/profiles/web/cordis.patch.yml`:
 
 ```yaml
 - id: web
@@ -82,12 +85,15 @@ or through the environment. `apiKey` is declared `role('secret')`, so it never a
 `describe()` response — but a plain-text config file is still a plain-text config file; prefer the
 environment when you can.
 
-> **On `$DSH_HOME/.env`.** The plugin reads `apiKeyEnv` (default `EXA_API_KEY`) through the harness's
-> launch-environment snapshot, which is documented to consult the inherited environment, the invoking
-> directory's `.env` and the Harness home's `.env`. That worked in some deployments and not in
-> others — on one Windows install the snapshot came back without the variable even though the file
-> was correct, and the config `apiKey` above was the fix. If your provider reports
-> `registered but unavailable`, the key is not reaching it; set `apiKey` directly.
+> **Where the key is read from, in order:** a literal `apiKey` in config, then the harness
+> **credential store** under `apiKeyEnv` (add `EXA_API_KEY` there, via the credential card in the GUI
+> or `$DSH_HOME/.credentials.yaml`), then the launch-environment snapshot, which is documented to
+> consult the inherited environment, the invoking directory's `.env` and the Harness home's `.env`.
+>
+> The credential store is consulted first because the snapshot is documented to come back without the
+> variable on some Windows installs — which is the deployment this was written against. If a
+> globally-selected `exa` reports `registered but unavailable`, check the credential store before
+> falling back to a literal `apiKey` in a plain-text config file.
 
 Restart `dsh web` after changing the environment. `cordis.patch.yml` itself is hot-reloaded, so
 config edits apply without a restart.
@@ -124,12 +130,16 @@ Typed in the composer. It runs directly against the interface and creates no mod
 | `/exa results 3` | Set the source cap |
 | `/exa status` | Report every knob, the available types, and the real ceiling |
 
-Plain words, no punctuation: the command declares **no argument hint**, so the composer inserts no
-template to edit around. `/exa status` lists the retrieval types too, so "which types were there
-again" never costs a second command, and a mistyped argument replies with copy-pasteable examples.
+The command declares `input.hint` (`on|off|status|type deep|results 3`), which is what makes the Web
+composer route an argument to the handler at all rather than sending the line to the model as an
+ordinary chat message. Brackets and quotes are treated as transparent, so the hint template is still
+editable in place. `/exa status` lists the retrieval types too, so "which types were there again"
+never costs a second command, and a mistyped argument replies with copy-pasteable examples.
 
-Writes land in the `qp-exa-dynamic` settings namespace's user layer, so they survive a
-restart. Clearing that section returns the plugin to its configured defaults.
+Writes go through the settings service under the Loader **entry id** `qp-exa-dynamic`, so they land in
+the profile patch's user layer and survive a restart. Clearing that section returns the plugin to its
+configured defaults. Every field the command writes is marked `.volatile()` in the schema, which is
+what both the write path and the auto-generated configuration card require.
 
 Measured on one provider instance, one query: switching Dynamic Highlights off took the same search
 from 12,716 to 57,958 highlight characters — a 4.6x difference, applied on the next search.
@@ -142,27 +152,39 @@ The plugin also registers a second, model-facing tool beside `web_search`:
 exa_search(query: string, maxResults?: integer)   // maxResults 1-50
 ```
 
-It exists because of a hard structural fact: `ctx.web.search()` caps its result at the **caller's**
-`request.maxResults`, and `dsh-tool-web` sends its own `searchMaxResults` on every call — so no
-provider can ever exceed that cap, and raising it means forking an agent preset. This tool owns its
-own `request.maxResults`, so the result count becomes a **per-call model argument** instead of a
-deployment-level ceiling.
+It exists so Exa is reachable **on demand** without changing what the rest of the profile searches
+with. The seam selects exactly one provider per profile — never per call, and `searchProvider` is
+captured when the service is constructed — so a profile that pins the first-party search can only
+reach Exa through a tool that bypasses that selection. This one calls the plugin's own provider
+**directly** rather than `ctx.web.search`.
 
-That makes the preset fork optional. Two ways past the default 8 sources:
+That is the whole routing story:
+
+| Tool | Path | Provider |
+| --- | --- | --- |
+| `web_search` | `ctx.web` | whatever the profile pins (unaffected) |
+| `exa_search` | direct | Exa |
+
+Pick the tool to pick the provider. No global setting changes, no restart, and `web_search` keeps
+answering from the default provider while Exa stays one call away.
+
+Going direct also lets the tool own its `request.maxResults`. `dsh-tool-web` sends its own
+`searchMaxResults` on every seam call, so no provider reached through the seam can exceed it, and
+raising it means forking an agent preset. This tool owns its bound, so the result count becomes a
+**per-call model argument**:
 
 | Want | Use | Needs the preset fork? |
 | --- | --- | --- |
 | 20 sources for one question | `exa_search(query, maxResults: 20)` — just ask in words | no |
-| `/exa results 20` to work | the `/exa` command | yes |
+| `/exa results 20` to apply | the `/exa` command | yes |
 
-`/exa results` is a fine setting to keep even without the fork, because it is what this tool falls
-back to: with `/exa results 20` set, `exa_search(query)` with no `maxResults` returns 20. It is
-`web_search` alone that stays clamped to the deployment's ceiling.
+Because it no longer travels through the seam, the tool applies the seam's truncation contract itself
+(`capToolResult`): if Exa over-returns a bounded request, `sources` is cut and `truncated` is set. Its
+ceiling of 50 is its own — dynamic highlights measured ~1.6k characters per source, so 50 is already
+~20k tokens of context.
 
-The tool goes through `ctx.web` like `web_search` does, so it uses the same selected provider, the
-same search type and the same Dynamic Highlights setting; only the count differs. Its ceiling of 50
-is its own — dynamic highlights measured ~1.6k characters per source, so 50 is already ~20k tokens
-of context.
+**A missing key fails loudly.** With no Exa key the tool rejects with `no Exa API key: …` instead of
+silently answering from the deployment's default provider.
 
 A prompt section next to `web_search`'s tells the model when to reach for it; ordinary lookups stay
 on `web_search`. If the composition has no `tools` registry the provider still mounts and only the
@@ -248,14 +270,19 @@ tokens.
   does not expose yet.
 - **One of this and the first-party Exa provider per profile.** Both register the provider id `exa`
   by default; running both needs a distinct `providerId` on one of them.
-- **Tested against dsh `0.1.5-rc.1` only**, which is what the peer ranges pin.
+- **`exa_search` needs an Exa key; `web_search` does not.** The tool goes straight to Exa, so with no
+  key it fails loudly instead of falling back — that is what makes the choice real. `web_search` is
+  unaffected either way.
+- **Tested against dsh `0.2.0-rc.2`**, which is what the peer ranges pin (`>=0.2.0-rc.2 <0.3.0-0`).
 - **Without a settings service the `/exa` writes are in-memory only.** The provider itself works
-  either way; without a command registry there is simply no `/exa`.
+  either way; without a command registry there is simply no `/exa`. A settings service that refuses
+  the write — no such entry id, no volatile field, a read-only profile — is reported as
+  `could not save: …` rather than silently swallowed.
 
 ## Development
 
 ```sh
-node test/index.test.js    # 40 unit tests, no API key needed
+node test/index.test.js    # 44 unit tests, no API key needed
 EXA_API_KEY=... node test/live.mjs   # hits the real API, spends credit
 ```
 

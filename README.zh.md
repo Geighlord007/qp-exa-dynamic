@@ -6,7 +6,8 @@
 
 [Exa](https://exa.ai) 支撑的 `WebSearchProvider`，接入
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 `ctx.web` seam。
-**默认开启 Exa Dynamic Highlights**，并提供 `/exa` 命令，在运行时改高亮、检索类型和返回条数。
+**默认开启 Exa Dynamic Highlights**，提供 `/exa` 命令在运行时改高亮、检索类型和返回条数，以及一个
+`exa_search` 工具让你**按需**走 Exa——而不改变 profile 里其它搜索用哪个提供方。
 
 ```sh
 dsh plugin --profile web add qp-exa-dynamic
@@ -50,7 +51,8 @@ dsh plugin --profile web add qp-exa-dynamic
 
 包自带 `dsh.bundle` 清单，安装后 bundle patch 会**自动插入 provider 行**，不需要手写。
 
-然后在 `$DSH_HOME/profiles/web/cordis.patch.yml` 里覆盖 `web` 那一行来选中它：
+**这一步是可选的。** `exa_search` 工具按需走 Exa，完全不需要它；只有想让 `web_search` 本身也走 Exa
+时才需要。在 `$DSH_HOME/profiles/web/cordis.patch.yml` 里覆盖 `web` 那一行：
 
 ```yaml
 - id: web
@@ -75,10 +77,12 @@ dsh plugin --profile web add qp-exa-dynamic
 或者走环境变量。`apiKey` 标了 `role('secret')`，不会出现在任何 `describe()` 响应里——但明文配置文件
 终究是明文配置文件，能用环境变量就尽量用。
 
-> **关于 `$DSH_HOME/.env`。** 插件通过 harness 的启动环境快照读取 `apiKeyEnv`（默认 `EXA_API_KEY`），
-> 该快照按文档会查阅继承环境、调用目录的 `.env` 与 Harness 主目录的 `.env`。这在有的部署里有效、
-> 有的无效——在一台 Windows 机器上，文件内容正确但快照里就是没有这个变量，最后靠上面的
-> `apiKey` 配置解决。如果你的 provider 报 `registered but unavailable`，就是密钥没送到，直接写
+> **密钥按这个顺序读取：** 配置里的字面 `apiKey` → harness **凭据库**里的 `apiKeyEnv`（把
+> `EXA_API_KEY` 加进去，用 GUI 的凭据卡片或 `$DSH_HOME/.credentials.yaml`）→ 启动环境快照（继承环境、
+> 调用目录的 `.env`、Harness 主目录的 `.env`）。
+>
+> 凭据库排在快照前面，是因为快照在某些 Windows 安装上按文档就会漏掉变量——本插件正是跑在这类部署上。
+> 如果全局选中了 `exa` 却报 `registered but unavailable`，先查凭据库，再考虑退回明文配置里的字面
 > `apiKey`。
 
 改环境变量后要重启 `dsh web`。`cordis.patch.yml` 本身是热加载的，所以配置改动不用重启。
@@ -115,12 +119,14 @@ dsh plugin --profile web add qp-exa-dynamic
 | `/exa results 3` | 设置来源上限 |
 | `/exa status` | 一次报全：当前状态、**可用的 type 列表**、真实天花板 |
 
-**全是裸单词，不需要任何符号**：命令**没有声明参数提示**，所以输入框不会塞进一个待编辑的模板。
-`/exa status` 顺带把检索类型列出来，想不起来有哪些 type 时不用再敲第二条；参数打错时会回一行可以
-直接照抄的示例。
+命令声明了 `input.hint`（`on|off|status|type deep|results 3`）——**这是 Web 输入框把参数交给处理函数的
+前提**，否则整行会被当成普通聊天消息发给模型。方括号和引号都会被当作透明字符，所以那个提示模板依然可
+以就地编辑。`/exa status` 顺带把检索类型列出来，想不起来有哪些 type 时不用再敲第二条；参数打错时会回
+一行可以直接照抄的示例。
 
-写入落在 `qp-exa-dynamic` settings 命名空间的**用户层**，跨重启保留。清掉那一节即回到插件
-配置的默认值。
+写入走 settings 服务，命名空间是 Loader 的**配置项 id** `qp-exa-dynamic`，因此落在 profile patch 的
+**用户层**，跨重启保留。清掉那一节即回到插件配置的默认值。命令会写的每个字段都在 schema 里标了
+`.volatile()` —— 写入路径和自动生成的配置卡片都要求这一点。
 
 实测同一个 provider 实例、同一个查询：关掉动态高亮让同一次搜索从 12,716 字符变成 57,958 字符——
 差 4.6 倍，**下一次搜索即刻生效**。
@@ -133,24 +139,35 @@ dsh plugin --profile web add qp-exa-dynamic
 exa_search(query: string, maxResults?: integer)   // maxResults 1-50
 ```
 
-它存在的原因是一条硬结构事实：`ctx.web.search()` 按**调用方**的 `request.maxResults` 截断结果，
-而 `dsh-tool-web` 每次调用都传自己的 `searchMaxResults`——所以**任何提供方都不可能超过那个上限**，
-要抬它就得 fork agent preset。这个工具拥有自己的 `request.maxResults`，于是条数从**部署级天花板**
-变成了**每次调用的模型参数**。
+它存在的目的是让 Exa **按需可达**，而不改变 profile 里其它搜索用谁。seam 对每个 profile 只选**一个**
+提供方——不是每次调用选，而且 `searchProvider` 在服务构造时就固化了——所以一个钉死官方搜索的
+profile，只能靠一个**绕过该选择**的工具才够得着 Exa。这个工具就是直接调插件自己的 provider，不走
+`ctx.web.search`。
 
-**这让 preset fork 变成可选的。** 两条拿到超过默认 8 条的路径：
+路由就这么简单：
+
+| 工具 | 路径 | 走谁 |
+| --- | --- | --- |
+| `web_search` | `ctx.web` | profile 钉死的那个（**不受影响**） |
+| `exa_search` | 直连 | Exa |
+
+**用哪个工具，就是选哪个提供方。** 不改任何全局设置、不用重启，Exa 就在一次调用之外，而 `web_search`
+照旧用默认提供方。
+
+直连还顺带让这个工具拥有自己的 `request.maxResults`。`dsh-tool-web` 每次走 seam 都传自己的
+`searchMaxResults`，所以**任何经 seam 的提供方都不可能超过那个上限**，要抬它就得 fork agent preset。
+这个工具拥有自己的上限，于是条数从**部署级天花板**变成了**每次调用的模型参数**：
 
 | 想要 | 怎么做 | 需要 fork preset 吗 |
 | --- | --- | --- |
 | 某次要 20 条 | `exa_search(query, maxResults: 20)`——直接用话问就行 | **不需要** |
 | 让 `/exa results 20` 生效 | `/exa` 命令 | 需要 |
 
-**即使不 fork，`/exa results` 也值得设**——因为这个工具不传 `maxResults` 时就回退到它：
-设了 `/exa results 20` 之后，`exa_search(query)` 会返回 20 条。被夹在部署上限里的**只有 `web_search`**。
+因为不再经过 seam，截断这份契约改由工具自己履行（`capToolResult`）：Exa 如果对有界请求超量返回，
+`sources` 会被裁掉并置 `truncated`。它 50 的上限是自己的——动态高亮实测每条约 1.6k 字符，50 条已经是
+约 2 万 token 的上下文。
 
-工具和 `web_search` 一样走 `ctx.web`，所以用的是同一个被选中的提供方、同一个检索类型、同一个
-Dynamic Highlights 设置；**只有条数不同**。它 50 的上限是自己的——动态高亮实测每条约 1.6k 字符，
-50 条已经是约 2 万 token 的上下文。
+**没有密钥时会明确报错**（`no Exa API key: …`），而不是悄悄回落到部署的默认提供方替你查。
 
 `web_search` 旁边会多一段提示告诉模型什么时候该用它（日常检索仍走 `web_search`）。如果组合里没有
 `tools` 注册表，provider 照常挂载，只是没有这个工具。
@@ -226,13 +243,17 @@ results` 仍然能把条数**往下调**，而那个方向才是省 token 的。
 - **没有 `category`、域名/日期过滤，也没有全文。** 这些 Exa 能力本插件尚未暴露。
 - **本插件与官方 Exa 提供方每个 profile 只能选一个。** 两者默认都注册 provider id `exa`；要共存需给
   其中一个设不同的 `providerId`。
-- **仅测过 dsh `0.1.5-rc.1`**，peer 范围也锁在这条线上。
+- **`exa_search` 需要 Exa 密钥，`web_search` 不需要。** 这个工具直连 Exa，没密钥时会**明确报错**而不是
+  回落——这正是"选择是真的"的代价。`web_search` 两边都不受影响。
+- **仅测过 dsh `0.2.0-rc.2`**，peer 范围也锁在这条线上（`>=0.2.0-rc.2 <0.3.0-0`）。
 - **没有 settings 服务时 `/exa` 只改内存。** provider 本身照常工作；没有命令注册表时就没有 `/exa`。
+  settings 服务拒绝写入时（没有这个 entry id、字段不是 volatile、profile 只读）会如实回
+  `could not save: …`，不会静默吞掉。
 
 ## 开发
 
 ```sh
-node test/index.test.js    # 40 个单元测试，不需要密钥
+node test/index.test.js    # 44 个单元测试，不需要密钥
 EXA_API_KEY=... node test/live.mjs   # 打真 API，会消耗额度
 ```
 
